@@ -1,7 +1,7 @@
 """HU-02 — Administracion de usuarios, roles y permisos."""
 import datetime
 
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
 from casos.admin import CasoAdmin, admin_site
@@ -12,12 +12,19 @@ from .base import PASSWORD, crear_aseguradora, crear_roles, crear_usuario
 class PermisosTests(TestCase):
     def setUp(self):
         crear_roles()
+        self.factory = RequestFactory()
         self.aseguradora = crear_aseguradora("Alfa")
         self.coordina = crear_usuario("coordina", rol="Coordinacion")
         self.asistente = crear_usuario("asistente", rol="Asistente")
         self.abogado = crear_usuario("abogado1", rol="Abogado")
         self.consulta = crear_usuario("consulta", rol="Consulta")
         self.caso_admin = CasoAdmin(Caso, admin_site)
+
+    def _request(self, user):
+        """Construye un request real (con user) para los metodos del ModelAdmin."""
+        req = self.factory.get("/admin/")
+        req.user = user
+        return req
 
     def _caso(self, numero="2026-000001", abogado=None):
         return Caso.objects.create(
@@ -44,12 +51,10 @@ class PermisosTests(TestCase):
         """CA-02.2: Consulta puede ver pero no editar."""
         self.assertTrue(self.consulta.has_perm("casos.view_caso"))
         caso = self._caso()
-
-        class Req:
-            user = self.consulta
-
-        self.assertFalse(self.caso_admin.has_change_permission(Req, caso))
-        self.assertFalse(self.caso_admin.has_delete_permission(Req, caso))
+        req = self._request(self.consulta)
+        self.assertTrue(self.caso_admin.has_view_permission(req, caso))
+        self.assertFalse(self.caso_admin.has_change_permission(req, caso))
+        self.assertFalse(self.caso_admin.has_delete_permission(req, caso))
 
     def test_ca_02_3_no_admin_no_gestiona_usuarios(self):
         """CA-02.3: quien no es superusuario no gestiona usuarios ni grupos."""
@@ -66,33 +71,22 @@ class PermisosTests(TestCase):
         """CA-02.4: ningun rol (ni superusuario) puede eliminar casos."""
         caso = self._caso()
         for u in (self.coordina, self.abogado, self.consulta):
-            class Req:
-                user = u
-            self.assertFalse(self.caso_admin.has_delete_permission(Req, caso))
+            self.assertFalse(
+                self.caso_admin.has_delete_permission(self._request(u), caso)
+            )
         # Ni siquiera el superusuario.
         superu = crear_usuario("super1", is_superuser=True)
-
-        class ReqSuper:
-            user = superu
-
-        self.assertFalse(self.caso_admin.has_delete_permission(ReqSuper, caso))
+        req_super = self._request(superu)
+        self.assertFalse(self.caso_admin.has_delete_permission(req_super, caso))
         # La accion masiva delete_selected no esta disponible.
-
-        class ReqActions:
-            user = superu
-            GET = {}
-
-        self.assertNotIn("delete_selected", self.caso_admin.get_actions(ReqActions))
+        self.assertNotIn("delete_selected", self.caso_admin.get_actions(req_super))
 
     def test_ca_02_1_abogado_edita_solo_sus_casos(self):
         """CA-02.1 (detalle): el abogado edita solo los casos asignados a el."""
         propio = self._caso(numero="2026-000010", abogado=self.abogado)
         ajeno = self._caso(numero="2026-000011", abogado=None)
-
-        class Req:
-            user = self.abogado
-
-        self.assertTrue(self.caso_admin.has_change_permission(Req, propio))
-        self.assertFalse(self.caso_admin.has_change_permission(Req, ajeno))
+        req = self._request(self.abogado)
+        self.assertTrue(self.caso_admin.has_change_permission(req, propio))
+        self.assertFalse(self.caso_admin.has_change_permission(req, ajeno))
         # Puede ver todos los casos (vista no restringida por objeto).
-        self.assertTrue(self.caso_admin.has_view_permission(Req, ajeno))
+        self.assertTrue(self.caso_admin.has_view_permission(req, ajeno))
