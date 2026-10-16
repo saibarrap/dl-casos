@@ -135,3 +135,6 @@ docs/     # matriz_ca.md (criterio -> prueba)
   `observaciones`, `registrado_por`, `creado_en`.
 
 Los campos son provisionales y se ajustaran a las columnas reales del Excel.
+
+## Disclaimer
+El contenido presente en este repositorio fue generado por IA para fines académicos. Los agentes utilizados fueron Claude de Anthropic y Kiro App Web. La gestión, testeo y revisión de los documentos fue realizada por el equipo de trabajo.
